@@ -1,8 +1,7 @@
 --// NOVA HUB 1911 - Universal GitHub Loader
---// Tyy repository
---// Downloads the complete Nova Hub, including Universal Fallback mode.
 
-local BASE = "https://raw.githubusercontent.com/phnj9dgrdc-cell/Tyy/main/"
+local BASE = "https://raw.githubusercontent.com/phnj9dgrdc-cell/shiny-parakeet/main/"
+
 local PARTS = {
     "NovaHub_1911_part1.lua",
     "NovaHub_1911_part2.lua",
@@ -14,81 +13,52 @@ local PARTS = {
     "NovaHub_1911_part8.lua",
 }
 
-local function notify(title, msg)
-    pcall(function()
-        game:GetService("StarterGui"):SetCore("SendNotification", {
-            Title = tostring(title),
-            Text = tostring(msg),
-            Duration = 5
-        })
-    end)
-end
-
 local function fetch(url)
-    local req = (syn and syn.request) or (http and http.request) or http_request or request
-
-    if req then
-        local ok, response = pcall(function()
-            return req({
-                Url = url,
-                Method = "GET",
-                Headers = {
-                    ["User-Agent"] = "Roblox/Exploit",
-                    ["Accept"] = "*/*"
-                }
-            })
-        end)
-
-        if ok and type(response) == "table" then
-            local status = tonumber(response.StatusCode or response.Status or 0) or 0
-            local body = response.Body or response.body
-            if status >= 200 and status < 300 and type(body) == "string" and #body > 0 then
-                return true, body
-            end
-        end
-    end
-
     local ok, body = pcall(function()
         return game:HttpGet(url)
     end)
 
     if ok and type(body) == "string" and #body > 0 then
-        return true, body
+        return body
     end
 
-    return false, tostring(body or "HTTP request failed")
+    error("Failed to download:\n" .. url .. "\n" .. tostring(body))
 end
-
-notify("Nova Hub", "Loading universal build...")
 
 local source = {}
 
-for i, name in ipairs(PARTS) do
-    local ok, body = fetch(BASE .. name)
+for i, file in ipairs(PARTS) do
+    print("[Nova Hub] Loading part " .. i .. "/8: " .. file)
 
-    if not ok then
-        notify("Nova Hub Error", "Failed to download part " .. i)
-        error("Nova Hub failed to download: " .. name .. "\n" .. tostring(body))
-    end
+    local body = fetch(BASE .. file)
 
     if body:find("<!DOCTYPE html", 1, true)
         or body:find("<html", 1, true)
         or body:find("404: Not Found", 1, true) then
-        notify("Nova Hub Error", "GitHub returned an error for part " .. i)
-        error("Invalid GitHub response for " .. name)
+
+        error("[Nova Hub] GitHub returned invalid data for " .. file)
     end
 
     source[#source + 1] = body
 end
 
-notify("Nova Hub", "All parts loaded. Starting...")
+print("[Nova Hub] All 8 parts downloaded.")
+print("[Nova Hub] Compiling...")
 
 local completeSource = table.concat(source, "\n")
+
 local chunk, compileError = loadstring(completeSource)
 
-if type(chunk) ~= "function" then
-    notify("Nova Hub Error", "Compilation failed")
-    error("Nova Hub compilation failed: " .. tostring(compileError))
+if not chunk then
+    error("[Nova Hub] Compilation failed:\n" .. tostring(compileError))
 end
 
-return chunk()
+print("[Nova Hub] Starting UI...")
+
+local success, result = pcall(chunk)
+
+if not success then
+    error("[Nova Hub] Runtime error:\n" .. tostring(result))
+end
+
+print("[Nova Hub] Loaded successfully!")
