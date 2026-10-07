@@ -4878,215 +4878,756 @@ local gameId = game.GameId
 local gameSource = NOVA_HUB_MODULES[gameId]
 
 if not gameSource then
+local gameId = game.GameId
+local gameSource = NOVA_HUB_MODULES[gameId]
+
+if not gameSource then
     --//==============================================================
     --// NOVA HUB UNIVERSAL FALLBACK
-    --// Uses the SAME embedded Nova UI library/theme as every
-    --// supported game module. No separate/basic fallback window.
+    --// Uses the EXACT SAME Nova UI library, theme, window,
+    --// tabs, animations and settings system as supported games.
     --//==============================================================
-    local function LoadUniversalNovaUI()
-        local okLib, Library = pcall(function()
-            local loader = loadstring(env.NOVA_HUB_UI_SOURCE)
-            if type(loader) ~= "function" then
-                error("Nova UI source could not be compiled")
-            end
-            return loader()
-        end)
 
-        if not okLib or not Library then
-            env.NOVA_HUB_NOTIFY("Nova Hub UI failed to load: " .. tostring(Library))
+    local function LoadUniversalNovaUI()
+        -- IMPORTANT:
+        -- Do NOT use env.NOVA_HUB_UI_SOURCE here.
+        -- Part 8 already has the real Nova loader:
+        -- xDTaraZ.Util.LoadLibrary()
+        local Library = xDTaraZ.Util.LoadLibrary()
+
+        if not Library then
+            xDTaraZ.Util.Alert(
+                "Nova Hub UI could not be loaded.",
+                "Universal fallback"
+            )
             return false
         end
 
+        -- Close a previous universal instance if one exists.
         if getgenv and getgenv().NovaHubUniversalUnload then
             pcall(getgenv().NovaHubUniversalUnload)
         end
 
         local Players = game:GetService("Players")
+        local TeleportService = game:GetService("TeleportService")
+        local Lighting = game:GetService("Lighting")
+        local RunService = game:GetService("RunService")
+
         local LocalPlayer = Players.LocalPlayer
-        local T = function(en, th) return Library:T(en, th) end
-        local function Notify(title, text, kind)
-            Library:Notify(title, text, 5, kind or "Info")
+
+        local T = function(en, th)
+            return Library:T(en, th)
+        end
+
+        local function Notify(text, kind)
+            pcall(function()
+                Library:Notify(
+                    "Nova Hub",
+                    tostring(text),
+                    4,
+                    kind or "Info"
+                )
+            end)
+        end
+
+        local function GetHumanoid()
+            local character = LocalPlayer.Character
+            if not character then
+                return nil
+            end
+
+            return character:FindFirstChildOfClass("Humanoid")
         end
 
         local function AddInfo(group, title, value)
-            group:AddLabel(T(title, title) .. "\n" .. tostring(value))
+            group:AddLabel(
+                T(title, title) ..
+                "\n" ..
+                tostring(value)
+            )
         end
+
+        --==============================================================
+        -- BUILD UNIVERSAL TABS
+        --==============================================================
 
         local function BuildTabs()
             local window = Library.Window
 
-            window:AddTabSection(T("Universal", "สากล"))
+            if not window then
+                error("Nova Hub Window was not created")
+            end
 
-            local home = window:AddTab(T("Home", "หน้าหลัก"), "house", T("Nova Hub universal mode", "โหมด Nova Hub สากล"))
-            local status = home:AddLeftGroupbox(T("Game Status", "สถานะเกม"))
-            AddInfo(status, "Game", game.Name)
-            AddInfo(status, "Game ID", game.GameId)
-            AddInfo(status, "Place ID", game.PlaceId)
-            AddInfo(status, "Player", LocalPlayer.Name)
-            AddInfo(status, "User ID", LocalPlayer.UserId)
+            --==========================================================
+            -- MAIN
+            --==========================================================
 
-            local welcome = home:AddRightGroupbox(T("Nova Hub", "Nova Hub"))
-            welcome:AddLabel(T(
-                "This game is not one of Nova Hub's dedicated game modules. Universal mode is active.",
-                "เกมนี้ไม่มีโมดูลเฉพาะของ Nova Hub และกำลังใช้โหมดสากล"
-            ))
-            welcome:AddButton({
-                Text = T("Copy Game ID", "คัดลอก Game ID"),
+            window:AddTabSection(
+                T("Universal", "สากล")
+            )
+
+            local HomeTab = window:AddTab(
+                T("Home", "หน้าหลัก"),
+                "house",
+                T(
+                    "Universal Nova Hub",
+                    "Nova Hub สากล"
+                )
+            )
+
+            local StatusBox = HomeTab:AddLeftGroupbox(
+                T("Game Status", "สถานะเกม"),
+                "info"
+            )
+
+            AddInfo(
+                StatusBox,
+                "Game",
+                game.Name
+            )
+
+            AddInfo(
+                StatusBox,
+                "Game ID",
+                game.GameId
+            )
+
+            AddInfo(
+                StatusBox,
+                "Place ID",
+                game.PlaceId
+            )
+
+            AddInfo(
+                StatusBox,
+                "Job ID",
+                game.JobId ~= "" and game.JobId or "Studio / unavailable"
+            )
+
+            AddInfo(
+                StatusBox,
+                "Player",
+                LocalPlayer.Name
+            )
+
+            AddInfo(
+                StatusBox,
+                "User ID",
+                LocalPlayer.UserId
+            )
+
+            local UniversalBox = HomeTab:AddRightGroupbox(
+                T("Nova Hub", "Nova Hub"),
+                "star"
+            )
+
+            UniversalBox:AddLabel(
+                T(
+                    "Universal Mode is active.\n" ..
+                    "This game does not currently have a dedicated Nova Hub module.",
+                    "โหมดสากลกำลังทำงาน\n" ..
+                    "เกมนี้ยังไม่มีโมดูล Nova Hub โดยเฉพาะ"
+                )
+            )
+
+            UniversalBox:AddButton({
+                Text = T(
+                    "Copy Game ID",
+                    "คัดลอก Game ID"
+                ),
+
                 Style = "Primary",
+
                 Func = function()
-                    local copy = setclipboard or toclipboard
-                    if copy then
-                        pcall(copy, tostring(game.GameId))
-                        Notify("Nova Hub", "Game ID copied.", "Success")
-                    else
-                        Notify("Nova Hub", tostring(game.GameId), "Info")
+                    local copy =
+                        setclipboard
+                        or toclipboard
+                        or (syn and syn.set_clipboard)
+
+                    if type(copy) == "function" then
+                        local ok = pcall(
+                            copy,
+                            tostring(game.GameId)
+                        )
+
+                        if ok then
+                            Notify(
+                                "Game ID copied.",
+                                "Success"
+                            )
+                            return
+                        end
                     end
+
+                    Notify(
+                        "Game ID: " .. tostring(game.GameId),
+                        "Info"
+                    )
                 end,
             })
-            welcome:AddButton({
-                Text = T("Rejoin Server", "เข้าร่วมเซิร์ฟเวอร์ใหม่"),
+
+            UniversalBox:AddButton({
+                Text = T(
+                    "Copy Place ID",
+                    "คัดลอก Place ID"
+                ),
+
                 Func = function()
-                    local TeleportService = game:GetService("TeleportService")
+                    local copy =
+                        setclipboard
+                        or toclipboard
+                        or (syn and syn.set_clipboard)
+
+                    if type(copy) == "function" then
+                        local ok = pcall(
+                            copy,
+                            tostring(game.PlaceId)
+                        )
+
+                        if ok then
+                            Notify(
+                                "Place ID copied.",
+                                "Success"
+                            )
+                            return
+                        end
+                    end
+
+                    Notify(
+                        "Place ID: " .. tostring(game.PlaceId),
+                        "Info"
+                    )
+                end,
+            })
+
+            UniversalBox:AddButton({
+                Text = T(
+                    "Rejoin Server",
+                    "เข้าร่วมเซิร์ฟเวอร์ใหม่"
+                ),
+
+                Func = function()
                     pcall(function()
-                        TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+                        TeleportService:TeleportToPlaceInstance(
+                            game.PlaceId,
+                            game.JobId,
+                            LocalPlayer
+                        )
                     end)
                 end,
             })
 
-            window:AddTabSection(T("Player", "ผู้เล่น"))
-            local player = window:AddTab(T("Player", "ผู้เล่น"), "user", T("Universal player utilities", "เครื่องมือผู้เล่นสากล"))
-            local movement = player:AddLeftGroupbox(T("Movement", "การเคลื่อนที่"))
-            movement:AddSlider("NovaUniversalWalkSpeed", {
-                Text = T("Walk Speed", "ความเร็วเดิน"),
-                Default = 16,
-                Min = 0,
-                Max = 150,
-                Rounding = 0,
-                Callback = function(v)
-                    local char = LocalPlayer.Character
-                    local hum = char and char:FindFirstChildOfClass("Humanoid")
-                    if hum then hum.WalkSpeed = v end
-                end,
-            })
-            movement:AddSlider("NovaUniversalJumpPower", {
-                Text = T("Jump Power", "พลังการกระโดด"),
-                Default = 50,
-                Min = 0,
-                Max = 150,
-                Rounding = 0,
-                Callback = function(v)
-                    local char = LocalPlayer.Character
-                    local hum = char and char:FindFirstChildOfClass("Humanoid")
-                    if hum then
-                        pcall(function() hum.UseJumpPower = true end)
-                        hum.JumpPower = v
-                    end
-                end,
-            })
-            movement:AddButton({
-                Text = T("Reset Movement", "รีเซ็ตการเคลื่อนที่"),
-                Style = "Primary",
+            UniversalBox:AddButton({
+                Text = T(
+                    "Rejoin Game",
+                    "เข้าเกมใหม่"
+                ),
+
                 Func = function()
-                    local char = LocalPlayer.Character
-                    local hum = char and char:FindFirstChildOfClass("Humanoid")
+                    pcall(function()
+                        TeleportService:Teleport(
+                            game.PlaceId,
+                            LocalPlayer
+                        )
+                    end)
+                end,
+            })
+
+            --==========================================================
+            -- PLAYER
+            --==========================================================
+
+            window:AddTabSection(
+                T("Player", "ผู้เล่น")
+            )
+
+            local PlayerTab = window:AddTab(
+                T("Player", "ผู้เล่น"),
+                "user",
+                T(
+                    "Universal player controls",
+                    "เครื่องมือผู้เล่นสากล"
+                )
+            )
+
+            local MovementBox = PlayerTab:AddLeftGroupbox(
+                T("Movement", "การเคลื่อนที่"),
+                "person-running"
+            )
+
+            MovementBox:AddSlider(
+                "NovaUniversalWalkSpeed",
+                {
+                    Text = T(
+                        "Walk Speed",
+                        "ความเร็วเดิน"
+                    ),
+
+                    Default = 16,
+                    Min = 0,
+                    Max = 150,
+                    Rounding = 0,
+
+                    Callback = function(value)
+                        local hum = GetHumanoid()
+
+                        if hum then
+                            hum.WalkSpeed =
+                                tonumber(value) or 16
+                        end
+                    end,
+                }
+            )
+
+            MovementBox:AddSlider(
+                "NovaUniversalJumpPower",
+                {
+                    Text = T(
+                        "Jump Power",
+                        "พลังการกระโดด"
+                    ),
+
+                    Default = 50,
+                    Min = 0,
+                    Max = 150,
+                    Rounding = 0,
+
+                    Callback = function(value)
+                        local hum = GetHumanoid()
+
+                        if hum then
+                            pcall(function()
+                                hum.UseJumpPower = true
+                            end)
+
+                            hum.JumpPower =
+                                tonumber(value) or 50
+                        end
+                    end,
+                }
+            )
+
+            MovementBox:AddButton({
+                Text = T(
+                    "Reset Movement",
+                    "รีเซ็ตการเคลื่อนที่"
+                ),
+
+                Style = "Primary",
+
+                Func = function()
+                    local hum = GetHumanoid()
+
                     if hum then
                         hum.WalkSpeed = 16
-                        pcall(function() hum.UseJumpPower = true end)
+
+                        pcall(function()
+                            hum.UseJumpPower = true
+                        end)
+
                         hum.JumpPower = 50
                     end
-                    Notify("Nova Hub", "Movement reset to 16 / 50.", "Success")
+
+                    -- Force the actual Nova sliders back to their
+                    -- original values as well.
+                    pcall(function()
+                        if Library.Options.NovaUniversalWalkSpeed then
+                            Library.Options.NovaUniversalWalkSpeed:SetValue(16)
+                        end
+                    end)
+
+                    pcall(function()
+                        if Library.Options.NovaUniversalJumpPower then
+                            Library.Options.NovaUniversalJumpPower:SetValue(50)
+                        end
+                    end)
+
+                    Notify(
+                        "Movement reset to 16 WalkSpeed / 50 JumpPower.",
+                        "Success"
+                    )
                 end,
             })
 
-            local character = player:AddRightGroupbox(T("Character", "ตัวละคร"))
-            character:AddButton({
-                Text = T("Respawn Character", "เกิดใหม่"),
+            local CharacterBox = PlayerTab:AddRightGroupbox(
+                T("Character", "ตัวละคร"),
+                "user"
+            )
+
+            CharacterBox:AddButton({
+                Text = T(
+                    "Respawn Character",
+                    "เกิดใหม่"
+                ),
+
                 Func = function()
-                    local char = LocalPlayer.Character
-                    local hum = char and char:FindFirstChildOfClass("Humanoid")
-                    if hum then hum.Health = 0 end
-                end,
-            })
+                    local hum = GetHumanoid()
 
-            window:AddTabSection(T("Visuals", "ภาพ"))
-            local visuals = window:AddTab(T("Visuals", "ภาพ"), "eye", T("Universal visual utilities", "เครื่องมือภาพสากล"))
-            local lighting = visuals:AddLeftGroupbox(T("Lighting", "แสง"))
-            local Lighting = game:GetService("Lighting")
-            lighting:AddToggle("NovaUniversalFullBright", {
-                Text = T("FullBright", "FullBright"),
-                Default = false,
-                Callback = function(v)
-                    if v then
-                        Lighting.Brightness = 2
-                        Lighting.ClockTime = 14
-                        Lighting.FogEnd = 100000
-                        Lighting.GlobalShadows = false
-                        Lighting.OutdoorAmbient = Color3.new(1, 1, 1)
+                    if hum then
+                        hum.Health = 0
                     end
                 end,
             })
-            lighting:AddButton({
-                Text = T("Restore Lighting", "คืนค่าแสง"),
+
+            CharacterBox:AddButton({
+                Text = T(
+                    "Refresh Character",
+                    "รีเฟรชตัวละคร"
+                ),
+
                 Func = function()
-                    Lighting.GlobalShadows = true
-                    Lighting.FogEnd = 1000
+                    pcall(function()
+                        LocalPlayer:LoadCharacter()
+                    end)
                 end,
             })
 
-            window:AddTabSection(T("Settings", "ตั้งค่า"))
-            local settings = window:AddTab(T("Settings", "ตั้งค่า"), "settings", T("Nova Hub settings", "การตั้งค่า Nova Hub"))
-            local info = settings:AddLeftGroupbox(T("Information", "ข้อมูล"))
-            info:AddLabel("Nova Hub\nUniversal Fallback\n\n" .. tostring(game.Name))
-            settings:AddRightGroupbox(T("Actions", "การทำงาน")):AddButton({
-                Text = T("Unload Nova Hub", "ปิด Nova Hub"),
+            --==========================================================
+            -- VISUALS
+            --==========================================================
+
+            window:AddTabSection(
+                T("Visuals", "ภาพ")
+            )
+
+            local VisualTab = window:AddTab(
+                T("Visuals", "ภาพ"),
+                "eye",
+                T(
+                    "Universal visual controls",
+                    "เครื่องมือภาพสากล"
+                )
+            )
+
+            local OriginalLighting = {
+                Brightness = Lighting.Brightness,
+                ClockTime = Lighting.ClockTime,
+                FogEnd = Lighting.FogEnd,
+                GlobalShadows = Lighting.GlobalShadows,
+                OutdoorAmbient = Lighting.OutdoorAmbient,
+            }
+
+            local LightingBox = VisualTab:AddLeftGroupbox(
+                T("Lighting", "แสง"),
+                "sun"
+            )
+
+            LightingBox:AddToggle(
+                "NovaUniversalFullBright",
+                {
+                    Text = T(
+                        "FullBright",
+                        "FullBright"
+                    ),
+
+                    Default = false,
+
+                    Callback = function(enabled)
+                        if enabled then
+                            Lighting.Brightness = 2
+                            Lighting.ClockTime = 14
+                            Lighting.FogEnd = 100000
+                            Lighting.GlobalShadows = false
+                            Lighting.OutdoorAmbient =
+                                Color3.new(1, 1, 1)
+                        else
+                            pcall(function()
+                                Lighting.Brightness =
+                                    OriginalLighting.Brightness
+                                Lighting.ClockTime =
+                                    OriginalLighting.ClockTime
+                                Lighting.FogEnd =
+                                    OriginalLighting.FogEnd
+                                Lighting.GlobalShadows =
+                                    OriginalLighting.GlobalShadows
+                                Lighting.OutdoorAmbient =
+                                    OriginalLighting.OutdoorAmbient
+                            end)
+                        end
+                    end,
+                }
+            )
+
+            LightingBox:AddButton({
+                Text = T(
+                    "Restore Lighting",
+                    "คืนค่าแสง"
+                ),
+
                 Func = function()
-                    Library:Unload()
+                    pcall(function()
+                        Lighting.Brightness =
+                            OriginalLighting.Brightness
+
+                        Lighting.ClockTime =
+                            OriginalLighting.ClockTime
+
+                        Lighting.FogEnd =
+                            OriginalLighting.FogEnd
+
+                        Lighting.GlobalShadows =
+                            OriginalLighting.GlobalShadows
+
+                        Lighting.OutdoorAmbient =
+                            OriginalLighting.OutdoorAmbient
+                    end)
+
+                    pcall(function()
+                        if Library.Options.NovaUniversalFullBright then
+                            Library.Options.NovaUniversalFullBright:SetValue(false)
+                        end
+                    end)
+
+                    Notify(
+                        "Lighting restored.",
+                        "Success"
+                    )
+                end,
+            })
+
+            --==========================================================
+            -- SERVER
+            --==========================================================
+
+            window:AddTabSection(
+                T("Server", "เซิร์ฟเวอร์")
+            )
+
+            local ServerTab = window:AddTab(
+                T("Server", "เซิร์ฟเวอร์"),
+                "server",
+                T(
+                    "Universal server utilities",
+                    "เครื่องมือเซิร์ฟเวอร์สากล"
+                )
+            )
+
+            local ServerInfo = ServerTab:AddLeftGroupbox(
+                T("Server Information", "ข้อมูลเซิร์ฟเวอร์"),
+                "server"
+            )
+
+            AddInfo(
+                ServerInfo,
+                "Players",
+                #Players:GetPlayers()
+            )
+
+            AddInfo(
+                ServerInfo,
+                "Max Players",
+                Players.MaxPlayers
+            )
+
+            AddInfo(
+                ServerInfo,
+                "Job ID",
+                game.JobId ~= "" and game.JobId or "Unavailable"
+            )
+
+            local ServerActions = ServerTab:AddRightGroupbox(
+                T("Actions", "การทำงาน"),
+                "refresh"
+            )
+
+            ServerActions:AddButton({
+                Text = T(
+                    "Rejoin Current Server",
+                    "เข้าร่วมเซิร์ฟเวอร์ปัจจุบัน"
+                ),
+
+                Func = function()
+                    pcall(function()
+                        TeleportService:TeleportToPlaceInstance(
+                            game.PlaceId,
+                            game.JobId,
+                            LocalPlayer
+                        )
+                    end)
+                end,
+            })
+
+            ServerActions:AddButton({
+                Text = T(
+                    "Copy Job ID",
+                    "คัดลอก Job ID"
+                ),
+
+                Func = function()
+                    local copy =
+                        setclipboard
+                        or toclipboard
+                        or (syn and syn.set_clipboard)
+
+                    if type(copy) == "function" then
+                        pcall(
+                            copy,
+                            tostring(game.JobId)
+                        )
+
+                        Notify(
+                            "Job ID copied.",
+                            "Success"
+                        )
+                    else
+                        Notify(
+                            "Job ID: " .. tostring(game.JobId),
+                            "Info"
+                        )
+                    end
+                end,
+            })
+
+            --==========================================================
+            -- SETTINGS
+            --==========================================================
+
+            local SettingsTab = window:AddSettingsTab()
+
+            local SessionBox = SettingsTab:AddLeftGroupbox(
+                T("Session", "เซสชัน"),
+                "settings"
+            )
+
+            SessionBox:AddButton({
+                Text = T(
+                    "Rejoin Game",
+                    "เข้าเกมใหม่"
+                ),
+
+                Func = function()
+                    pcall(function()
+                        TeleportService:Teleport(
+                            game.PlaceId,
+                            LocalPlayer
+                        )
+                    end)
+                end,
+            })
+
+            SessionBox:AddButton({
+                Text = T(
+                    "Unload Nova Hub",
+                    "ปิด Nova Hub"
+                ),
+
+                Style = "Primary",
+
+                Func = function()
+                    pcall(function()
+                        Library:Unload()
+                    end)
                 end,
             })
         end
+
+        --==============================================================
+        -- UNIVERSAL UNLOAD
+        --==============================================================
 
         local function UnloadUniversal()
-            pcall(function() Library:Unload() end)
+            pcall(function()
+                Library:Unload()
+            end)
         end
-        getgenv().NovaHubUniversalUnload = UnloadUniversal
+
+        getgenv().NovaHubUniversalUnload =
+            UnloadUniversal
+
         Library:OnUnload(function()
-            if getgenv().NovaHubUniversalUnload == UnloadUniversal then
+            if getgenv().NovaHubUniversalUnload ==
+                UnloadUniversal then
+
                 getgenv().NovaHubUniversalUnload = nil
             end
         end)
 
+        --==============================================================
+        -- SAME NOVA WINDOW CONFIGURATION
+        --==============================================================
+
         Library:CreateWindow({
             Title = "Nova Hub",
-            SubTitle = "Universal Mode",
+            SubTitle = "Nova Hub",
             MenuKey = Enum.KeyCode.LeftControl,
-            ConfigFolder = "NovaHub",
+
+            -- Use the SAME config folder used by the actual
+            -- Nova Hub configuration instead of making a
+            -- separate generic fallback configuration.
+            ConfigFolder = Config.SaveFolder,
+
             Language = "Auto",
             Theme = "Nova",
+
             OnUnlocked = function()
-                BuildTabs()
-                Notify("Nova Hub", "Universal mode loaded.", "Success")
+                xDTaraZ.Util.Try(
+                    "universal ui",
+                    BuildTabs
+                )
+
+                Notify(
+                    "Universal Nova Hub loaded.",
+                    "Success"
+                )
+
+                -- Keep the same autoload behavior as the
+                -- supported Nova Hub interface.
+                xDTaraZ.Util.Try(
+                    "autoload config",
+                    Library.LoadAutoloadConfig,
+                    Library
+                )
             end,
         })
+
         return true
     end
 
     if LoadUniversalNovaUI() then
-        env.NOVA_HUB_NOTIFY("Universal Nova Hub loaded for this game.")
+        xDTaraZ.Util.Alert(
+            "Universal Nova Hub loaded.",
+            "Game ID: " .. tostring(game.GameId)
+        )
     end
+
     return
 end
+
+--==============================================================
+-- SUPPORTED GAME MODULE
+--==============================================================
 
 local chunk, compileErr = loadstring(gameSource)
+
 if not chunk then
-    env.NOVA_HUB_NOTIFY("Nova Hub compile error: " .. tostring(compileErr))
+    xDTaraZ.Util.Alert(
+        "Nova Hub compile error.",
+        tostring(compileErr)
+    )
     return
 end
 
-local ok, err = xpcall(chunk, function(e)
-    return debug.traceback(tostring(e), 2)
-end)
+local ok, err = xpcall(
+    chunk,
+    function(e)
+        return debug.traceback(
+            tostring(e),
+            2
+        )
+    end
+)
 
 if not ok then
-    env.NOVA_HUB_NOTIFY("Nova Hub stopped: " .. tostring(err):match("^[^\n]*"))
-    warn("[Nova Hub] " .. tostring(err))
+    local shortError =
+        tostring(err):match("^[^\n]*")
+
+    xDTaraZ.Util.Alert(
+        "Nova Hub stopped.",
+        shortError
+    )
+
+    warn(
+        "[Nova Hub] " ..
+        tostring(err)
+    )
 end
